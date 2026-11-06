@@ -7,5 +7,3 @@ build/
 .verify/
 .pytest_cache/
 
-# GitHub-Token ohne workflow-Scope: Datei per Web-UI hochladen
-.github/

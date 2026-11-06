@@ -93,7 +93,7 @@ class ZipArchiveParser:
     name: str = "ZIP Archive Parser"
     version: str = "1.1.0"
     author: str = "paperless-zip-parser contributors"
-    url: str = "https://github.com/"
+    url: str = "https://github.com/zunami/paperless-zip-parser"
 
     def __init__(self, logging_group: object = None) -> None:
         from django.conf import settings
