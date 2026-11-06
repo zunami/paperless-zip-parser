@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parent
 SRC = ROOT / "src"
 DIST = ROOT / "dist"
 NAME = "paperless_zip_parser"
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 DIST_INFO = f"{NAME}-{VERSION}.dist-info"
 
 METADATA = f"""Metadata-Version: 2.1

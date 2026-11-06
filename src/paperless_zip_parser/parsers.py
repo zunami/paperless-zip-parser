@@ -63,14 +63,24 @@ _STRINGS: dict[str, dict[str, str]] = {
 }
 
 
-def _t(key: str, **kwargs) -> str:
-    """Translate one label, falling back to English."""
+def _language() -> str:
+    """Language for the note text: env override, then Django, then English."""
+    forced = os.environ.get("PAPERLESS_ZIP_PARSER_LANGUAGE", "").strip()
+    if forced:
+        return forced[:2].lower()
     try:
+        from django.conf import settings
         from django.utils.translation import get_language
 
-        lang = (get_language() or "en")[:2]
+        code = get_language() or getattr(settings, "LANGUAGE_CODE", "en")
     except Exception:
-        lang = "en"
+        code = "en"
+    return (code or "en")[:2].lower()
+
+
+def _t(key: str, **kwargs) -> str:
+    """Translate one label, falling back to English."""
+    lang = _language()
     template = _STRINGS.get(lang, _STRINGS["en"]).get(key) or _STRINGS["en"][key]
     return template.format(**kwargs)
 
@@ -91,7 +101,7 @@ def _is_plain_archive(path: Path) -> bool:
 
 class ZipArchiveParser:
     name: str = "ZIP Archive Parser"
-    version: str = "1.1.0"
+    version: str = "1.2.0"
     author: str = "paperless-zip-parser contributors"
     url: str = "https://github.com/zunami/paperless-zip-parser"
 

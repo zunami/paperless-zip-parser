@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "paperless-zip-parser"
-version = "1.1.0"
+version = "1.2.0"
 description = "Paperless-ngx parser that stores ZIP archives as one document, without unpacking them"
 readme = "README.md"
 license = { text = "MIT" }

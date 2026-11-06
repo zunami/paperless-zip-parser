@@ -132,6 +132,23 @@ def test_english_and_german_text():
         assert parsers._t("title")
 
 
+def test_language_override():
+    import os as _os
+
+    old = _os.environ.get("PAPERLESS_ZIP_PARSER_LANGUAGE")
+    try:
+        _os.environ["PAPERLESS_ZIP_PARSER_LANGUAGE"] = "de"
+        assert parsers._language() == "de"
+        assert parsers._t("title") == "ZIP-Archiv"
+        _os.environ["PAPERLESS_ZIP_PARSER_LANGUAGE"] = "en"
+        assert parsers._t("title") == "ZIP archive"
+    finally:
+        if old is None:
+            del _os.environ["PAPERLESS_ZIP_PARSER_LANGUAGE"]
+        else:
+            _os.environ["PAPERLESS_ZIP_PARSER_LANGUAGE"] = old
+
+
 if __name__ == "__main__":
     failed = []
     for name, fn in sorted(globals().items()):
