@@ -10,9 +10,15 @@ original archive stays one click away in the download button.
 
 ## Why
 
-Paperless-ngx rejects archives it cannot extract text from. People who archive collections of files
-(site exports, source drops, scans, invoices per year) want the archive itself in Paperless, with
-metadata - not its contents.
+Paperless-ngx rejects archives it cannot extract text from. But some files must be kept as they are:
+
+- **medical records** - invoices, findings and imaging (X-ray, CT, MRI) that only opens in the
+  practice's own viewer, but has to be handed over at a later consultation
+- exports of a website, a source drop, a scan batch, invoices per year
+- any bundle that only makes sense complete and unchanged
+
+Paperless is the place where you *find* it again; the archive is the thing you actually keep. So the
+document gets tags, correspondent, date and a preview, while the ZIP stays byte-identical.
 
 ## How it works
 
