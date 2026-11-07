@@ -1,5 +1,10 @@
 # paperless-zip-parser
 
+> **Private project, use at your own risk.** Maintained in spare time, no company, no support, no
+> warranty. **No liability for damages, data loss or broken documents** — keep backups, test on a
+> copy first. Full text: [DISCLAIMER.md](DISCLAIMER.md).
+> *Privates Projekt, Benutzung auf eigenes Risiko, keine Haftung für Schäden oder Datenverlust.*
+
 A [Paperless-ngx](https://github.com/paperless-ngx/paperless-ngx) parser plugin that stores a **ZIP
 archive as a single document**: the file is kept byte-identical, never unpacked, never indexed and
 never modified. Tags, correspondent, document type, custom fields and workflows behave like they do
@@ -110,7 +115,16 @@ the stored original, metadata round-trip).
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
+
+## Disclaimer
+
+Private project, no company behind it. Use at your own risk: **no warranty and no liability for
+damages, data loss, broken or unreadable documents, missing metadata or downtime.** Keep independent
+backups and test on a copy before using it on a productive archive. This plugin does not encrypt
+anything, and archiving a file unchanged does not guarantee it stays readable years from now.
+
+Full text in English and German: [DISCLAIMER.md](DISCLAIMER.md)
 
 ## Live verification (maintainer)
 

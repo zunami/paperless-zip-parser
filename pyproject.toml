@@ -7,6 +7,7 @@ name = "paperless-zip-parser"
 version = "1.2.0"
 description = "Paperless-ngx parser that stores ZIP archives as one document, without unpacking them"
 readme = "README.md"
+license-files = ["LICENSE"]
 license = { text = "MIT" }
 requires-python = ">=3.12"
 authors = [{ name = "paperless-zip-parser contributors" }]
