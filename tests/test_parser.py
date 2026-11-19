@@ -80,9 +80,27 @@ def test_flags():
     parser = ZipArchiveParser()
     try:
         assert parser.can_produce_archive is False
-        assert parser.requires_pdf_rendition is True
+        # 1.3.0: no PDF rendition -> Paperless creates no archive version -> the
+        # download button returns the original ZIP instead of a note PDF.
+        assert parser.requires_pdf_rendition is False
     finally:
         parser.__exit__(None, None, None)
+
+
+def test_produce_archive_false_yields_no_archive():
+    with ZipArchiveParser() as parser:
+        parser.configure(None)
+        parser.parse(ARCHIVE, "application/zip", produce_archive=False)
+        assert parser.get_archive_path() is None
+        assert parser.get_text(), "text must still make the document searchable"
+
+
+def test_produce_archive_true_still_renders_note_page():
+    with ZipArchiveParser() as parser:
+        parser.configure(None)
+        parser.parse(ARCHIVE, "application/zip", produce_archive=True)
+        path = parser.get_archive_path()
+        assert path is not None and Path(path).is_file()
 
 
 def test_parse_produces_text_pdf_and_thumbnail():
