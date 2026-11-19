@@ -33,14 +33,36 @@ document gets tags, correspondent, date and a preview, while the ZIP stays byte-
 | `score()` | 10 for plain ZIP archives, `None` for anything else |
 | `parse()` | reads name and size only, renders the note page |
 | `get_text()` | `<localised> archive name + size` - makes the document searchable |
-| `get_archive_path()` | the note page PDF (used as the preview) |
-| `requires_pdf_rendition` | `True` - Paperless shows the PDF instead of trying to render a ZIP |
+| `get_archive_path()` | `None` when Paperless asks for no archive (1.3.0 default) |
+| `requires_pdf_rendition` | `False` since 1.3.0 - no archive version, the download returns the original ZIP |
 | `can_produce_archive` | `False` - no OCR, no PDF/A, the original is the document |
 
 The archive is **never opened for extraction**. `_is_plain_archive()` reads entry names from the
 central directory only, to tell a plain archive from a container that just happens to be a ZIP
 (docx / xlsx / pptx / ODF / EPUB). Without that guard the parser would hijack office documents from
 Tika.
+
+## Download behaviour (changed in 1.3.0)
+
+Since **1.3.0** the plugin sets `requires_pdf_rendition = False`, so Paperless creates **no archive
+version** for a ZIP document. The plain **Download** button therefore returns the **original ZIP** -
+one click, no dropdown, no login dance. This matters when the file is handed to someone else (a
+doctor, an accountant) who should not have to discover a hidden menu entry.
+
+| Version | Download button returns |
+|---|---|
+| up to 1.2.0 | the rendered note PDF (archive version); original only via the arrow menu |
+| **1.3.0** | **the original ZIP** |
+
+Trade-off, stated plainly: without an archive version there is **no in-browser preview** of the ZIP.
+The list thumbnail is still rendered by `get_thumbnail()`, and `get_text()` still makes the document
+searchable by file name and size. If you prefer the preview over the one-click original, stay on
+1.2.0 or use a share link with `file_version=original`.
+
+**Existing documents keep their old archive version.** Paperless only sets `archive_filename` when a
+parser produces an archive; it never clears it (`documents/tasks.py`, no else branch), and the field
+is read-only over the API. To move an existing document to the new behaviour, delete it and upload
+the ZIP again. Re-processing alone does not remove the old note PDF.
 
 ## Install
 
