@@ -15,7 +15,15 @@ ROOT = Path(__file__).resolve().parent
 SRC = ROOT / "src"
 DIST = ROOT / "dist"
 NAME = "paperless_zip_parser"
-VERSION = "1.2.0"
+import re
+
+# Version hat EINE Quelle: src/paperless_zip_parser/__init__.py (pyproject.toml traegt sie
+# fuer pip; beide werden hier gegengeprueft, damit die Drift auffaellt statt still zu passieren).
+_pkg = (SRC / "paperless_zip_parser" / "__init__.py").read_text(encoding="utf-8")
+VERSION = re.search(r'__version__\s*=\s*"([^"]+)"', _pkg).group(1)
+_pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+if f'version = "{VERSION}"' not in _pyproject:
+    sys.exit(f"Versionsdrift: __init__.py={VERSION}, pyproject.toml passt nicht")
 DIST_INFO = f"{NAME}-{VERSION}.dist-info"
 
 METADATA = f"""Metadata-Version: 2.1
