@@ -101,7 +101,7 @@ def _t(key: str, **kwargs) -> str:
 
 
 def _is_plain_archive(path: Path) -> bool:
-    """True, wenn das Zip kein Office-/EPUB-Container ist (liest nur das Verzeichnis)."""
+    """True if the archive is not an office/EPUB container (reads only the entry names)."""
     try:
         with zipfile.ZipFile(path) as archive:
             names = archive.namelist()
@@ -246,8 +246,8 @@ class ZipArchiveParser:
         return self._archive_path
 
     def get_page_count(self, document_path: Path, mime_type: str) -> int | None:
-        # Die Notizseite ist immer genau eine Seite. get_page_count_for_pdf auf das selbst
-        # gebaute PDF zu werfen bringt nichts und kostet einen Fehlerpfad.
+        # The note page is always exactly one page. Running get_page_count_for_pdf over the
+        # self-built PDF gains nothing and adds a failure path.
         return 1 if self._archive_path is not None else None
 
     def extract_metadata(self, document_path: Path, mime_type: str) -> list:

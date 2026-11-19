@@ -42,7 +42,7 @@ ARCHIVE = _zip("archiv-2026.zip", {"notizen.txt": "hallo " * 500, "unterordner/b
 DOCX = _zip("brief.docx", {"[Content_Types].xml": "<Types/>", "word/document.xml": "<d/>"})
 EPUB = _zip("buch.epub", {"mimetype": "application/epub+zip", "META-INF/container.xml": "<c/>"})
 BROKEN = SCRATCH / "kaputt.zip"
-BROKEN.write_bytes(b"PK-kein-echtes-zip")
+BROKEN.write_bytes(b"PK-not-a-real-archive")
 
 
 def test_registry_attributes_present():

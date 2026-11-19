@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Baut das Wheel ohne Build-Tool (reine stdlib) und prueft die Discovery.
+"""Builds the wheel without a build tool (stdlib only) and checks discovery.
 
-Erzeugt dist/paperless_zip_parser-1.0.0-py3-none-any.whl und
-dist/zip-parser-site.zip (identischer Inhalt, fuer File-Station-Extraktion).
+Writes dist/paperless_zip_parser-<version>-py3-none-any.whl and
+dist/paperless-zip-parser.zip (identical content, unpacks straight into a data folder).
 """
 
 import base64
@@ -17,13 +17,13 @@ DIST = ROOT / "dist"
 NAME = "paperless_zip_parser"
 import re
 
-# Version hat EINE Quelle: src/paperless_zip_parser/__init__.py (pyproject.toml traegt sie
-# fuer pip; beide werden hier gegengeprueft, damit die Drift auffaellt statt still zu passieren).
+# The version has ONE source: src/paperless_zip_parser/__init__.py (pyproject.toml carries it
+# for pip; both are cross-checked here so drift fails loudly instead of passing silently).
 _pkg = (SRC / "paperless_zip_parser" / "__init__.py").read_text(encoding="utf-8")
 VERSION = re.search(r'__version__\s*=\s*"([^"]+)"', _pkg).group(1)
 _pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
 if f'version = "{VERSION}"' not in _pyproject:
-    sys.exit(f"Versionsdrift: __init__.py={VERSION}, pyproject.toml passt nicht")
+    sys.exit(f"Version drift: __init__.py={VERSION}, pyproject.toml does not match")
 DIST_INFO = f"{NAME}-{VERSION}.dist-info"
 
 METADATA = f"""Metadata-Version: 2.1
