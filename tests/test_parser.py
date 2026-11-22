@@ -95,15 +95,17 @@ def test_produce_archive_false_yields_no_archive():
         assert parser.get_text(), "text must still make the document searchable"
 
 
-def test_produce_archive_true_still_renders_note_page():
-    with ZipArchiveParser() as parser:
-        parser.configure(None)
-        parser.parse(ARCHIVE, "application/zip", produce_archive=True)
-        path = parser.get_archive_path()
-        assert path is not None and Path(path).is_file()
+def test_produce_archive_flag_is_ignored():
+    # 1.3.x: the flag stays for API compatibility, but no PDF archive is ever produced.
+    for flag in (True, False):
+        with ZipArchiveParser() as parser:
+            parser.configure(None)
+            parser.parse(ARCHIVE, "application/zip", produce_archive=flag)
+            assert parser.get_archive_path() is None, flag
+            assert parser.get_text(), "text must still make the document searchable"
 
 
-def test_parse_produces_text_pdf_and_thumbnail():
+def test_parse_produces_text_and_thumbnail():
     payload = ARCHIVE.read_bytes()
     with ZipArchiveParser() as parser:
         parser.configure(None)
@@ -113,9 +115,8 @@ def test_parse_produces_text_pdf_and_thumbnail():
         assert "archiv-2026.zip" in text
         assert str(len(payload)) in text
 
-        archive = parser.get_archive_path()
-        assert archive is not None and archive.read_bytes()[:5] == b"%PDF-"
-        assert parser.get_page_count(ARCHIVE, "application/zip") == 1
+        assert parser.get_archive_path() is None
+        assert parser.get_page_count(ARCHIVE, "application/zip") is None
         assert parser.extract_metadata(ARCHIVE, "application/zip") == []
         assert parser.get_date() is None
 
@@ -137,8 +138,24 @@ def test_render_failure_keeps_document():
             parser.parse(ARCHIVE, "application/zip")
             assert parser.get_archive_path() is None
             assert "archiv-2026.zip" in parser.get_text()
+            thumb = parser.get_thumbnail(ARCHIVE, "application/zip")
+            assert thumb.read_bytes()[8:12] == b"WEBP", "fallback thumbnail must be valid"
     finally:
         ZipArchiveParser._note_image = original
+
+
+def test_missing_font_falls_back_to_default():
+    from django.conf import settings
+
+    original = settings.THUMBNAIL_FONT_NAME
+    settings.THUMBNAIL_FONT_NAME = "/nonexistent/no-such-font.ttf"
+    try:
+        with ZipArchiveParser() as parser:
+            thumb = parser.get_thumbnail(ARCHIVE, "application/zip")
+            assert thumb.read_bytes()[8:12] == b"WEBP"
+            assert thumb.stat().st_size > 0
+    finally:
+        settings.THUMBNAIL_FONT_NAME = original
 
 
 def test_english_and_german_text():

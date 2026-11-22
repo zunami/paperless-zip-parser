@@ -26,10 +26,15 @@ if f'version = "{VERSION}"' not in _pyproject:
     sys.exit(f"Version drift: __init__.py={VERSION}, pyproject.toml does not match")
 DIST_INFO = f"{NAME}-{VERSION}.dist-info"
 
-METADATA = f"""Metadata-Version: 2.1
+METADATA = f"""Metadata-Version: 2.4
 Name: paperless-zip-parser
 Version: {VERSION}
 Summary: Paperless-ngx parser that archives ZIP files as-is (no unpacking)
+Project-URL: Homepage, https://github.com/zunami/paperless-zip-parser
+Project-URL: Issues, https://github.com/zunami/paperless-zip-parser/issues
+Project-URL: Source, https://github.com/zunami/paperless-zip-parser
+License-Expression: MIT
+License-File: LICENSE
 Requires-Python: >=3.12
 """
 
@@ -49,10 +54,14 @@ def files() -> list[tuple[str, bytes]]:
     for path in sorted(SRC.joinpath(NAME).rglob("*.py")):
         arc = path.relative_to(SRC).as_posix()
         out.append((arc, path.read_bytes()))
+    license_text = (ROOT / "LICENSE").read_bytes()
     out.append((f"{DIST_INFO}/METADATA", METADATA.encode()))
     out.append((f"{DIST_INFO}/WHEEL", WHEEL.encode()))
     out.append((f"{DIST_INFO}/entry_points.txt", ENTRY_POINTS.encode()))
     out.append((f"{DIST_INFO}/top_level.txt", (NAME + "\n").encode()))
+    # License file belongs in the distribution, otherwise the wheel is not self-contained.
+    out.append((f"{DIST_INFO}/licenses/LICENSE", license_text))
+    out.append(("LICENSE", license_text))
     return out
 
 
@@ -77,7 +86,7 @@ def main() -> int:
         with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as zf:
             for arc, data in entries:
                 zf.writestr(arc, data)
-        print(f"geschrieben: {target.name} ({target.stat().st_size} Bytes, {len(entries)} Dateien)")
+        print(f"written: {target.name} ({target.stat().st_size} bytes, {len(entries)} files)")
     return 0
 
 

@@ -17,9 +17,48 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install pillow pytest bandit
-      - name: tests
+      - name: unit tests
         run: python -m pytest -q
+      - name: plain runner (no pytest)
+        run: python tests/test_parser.py
       - name: static analysis
-        run: bandit -q -ll -r src/
-      - name: build
+        run: bandit -q -ll -r src/ verify_paperless.py
+      - name: build wheel and zip
         run: python build_wheel.py
+      - name: build refuses a drifted version
+        run: |
+          python - <<'PY'
+          import pathlib, re
+          path = pathlib.Path("src/paperless_zip_parser/__init__.py")
+          text = path.read_text()
+          version = re.search(r'__version__ = "([^"]+)"', text).group(1)
+          path.write_text(text.replace(f'__version__ = "{version}"', '__version__ = "0.0.0-drift"'))
+          print("prepared drift case for", version)
+          PY
+          if python build_wheel.py; then
+            echo "build must fail on version drift" >&2
+            exit 1
+          fi
+          echo "build refused the drifted version, as expected"
+          git checkout -- src/paperless_zip_parser/__init__.py
+      - name: install the built wheel and load the entry point
+        run: |
+          pip install --no-index --find-links=dist paperless-zip-parser
+          python - <<'PY'
+          from importlib.metadata import entry_points
+          eps = list(entry_points(group="paperless_ngx.parsers"))
+          assert eps, "no entry point registered"
+          for ep in eps:
+              # Loading the class is enough here: instantiating it needs a Django settings module.
+              parser_cls = ep.load()
+              print("entry point:", ep.name, "->", parser_cls.__name__)
+              assert parser_cls.supported_mime_types()
+          PY
+      - name: import straight from the zip on PYTHONPATH
+        run: |
+          PYTHONPATH=dist/paperless-zip-parser.zip python - <<'PY'
+          from importlib.metadata import version
+          import paperless_zip_parser.parsers as parsers
+          print("zip import ok, version", version("paperless-zip-parser"))
+          assert parsers.ZipArchiveParser.supported_mime_types()
+          PY

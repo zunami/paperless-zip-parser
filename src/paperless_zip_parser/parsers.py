@@ -28,6 +28,8 @@ import os
 import shutil
 import tempfile
 import zipfile
+
+from . import __version__ as _pkg_version
 from pathlib import Path
 from typing import Self
 
@@ -51,7 +53,24 @@ _SUPPORTED: dict[str, str] = (
 # ZIP is also the container format of OOXML (docx/xlsx/pptx), ODF and EPUB. Depending on the
 # libmagic version these are NOT reported as their own type (file --mime-type says application/zip).
 # Without this guard the parser claims every office file with score=10 and bypasses Tika.
-_FOREIGN_MARKERS = ("[Content_Types].xml", "mimetype", "META-INF/container.xml")
+_OOXML_MARKER = "[Content_Types].xml"
+# A part path is more specific than a bare directory name: a plain archive may well contain a
+# folder called "word/", which must not make it look like a DOCX.
+_OOXML_PARTS = ("word/document.xml", "xl/workbook.xml", "ppt/presentation.xml")
+_FOREIGN_SUFFIXES = frozenset(
+    {".docx", ".docm", ".xlsx", ".xlsm", ".pptx", ".pptm",
+     ".odt", ".ods", ".odp", ".odg", ".epub"}
+)
+# ODF and EPUB both carry a stored "mimetype" entry; a plain ZIP may contain a file of that
+# name without being an office container, so only the entry content decides.
+_FOREIGN_MIME_PREFIXES = (b"application/vnd.oasis.opendocument.", b"application/epub+zip")
+# Cheap guard rails against decompression bombs: only the first bytes of "mimetype" are read and
+# the central directory is refused when it is absurdly large. Both are configurable.
+_MIMETYPE_PROBE_BYTES = 64
+_MAX_ENTRIES = int(os.environ.get("PAPERLESS_ZIP_PARSER_MAX_ENTRIES", "200000"))
+_MAX_UNCOMPRESSED = int(
+    os.environ.get("PAPERLESS_ZIP_PARSER_MAX_UNCOMPRESSED", str(64 * 1024**3))
+)
 
 # Do not rely on get_language() alone: the Celery worker has no request context and returns
 # 'en', which would put English search text on a German instance.
@@ -81,17 +100,32 @@ _STRINGS: dict[str, dict[str, str]] = {
 
 
 def _language() -> str:
+    """Language for the note text.
+
+    Order matters: an explicit override wins, then the instance configuration (LANGUAGE_CODE),
+    then the worker's active language, then English. A background task often runs with the
+    worker default ("en"), which must not hide a German instance setting.
+    """
     forced = os.environ.get("PAPERLESS_ZIP_PARSER_LANGUAGE", "").strip()
     if forced:
         return forced[:2].lower()
+    candidates: list[str] = []
     try:
         from django.conf import settings
+
+        candidates.append((getattr(settings, "LANGUAGE_CODE", "") or "")[:2].lower())
+    except Exception:  # noqa: BLE001 - outside Django (CLI, tests) English is fine
+        pass
+    try:
         from django.utils.translation import get_language
 
-        code = get_language() or getattr(settings, "LANGUAGE_CODE", "en")
-    except Exception:
-        code = "en"
-    return (code or "en")[:2].lower()
+        candidates.append((get_language() or "")[:2].lower())
+    except Exception:  # noqa: BLE001 - no active translation outside Django
+        pass
+    for code in candidates:
+        if code in _STRINGS:
+            return code
+    return "en"
 
 
 def _t(key: str, **kwargs) -> str:
@@ -100,22 +134,53 @@ def _t(key: str, **kwargs) -> str:
     return template.format(**kwargs)
 
 
-def _is_plain_archive(path: Path) -> bool:
-    """True if the archive is not an office/EPUB container (reads only the entry names)."""
+def _is_plain_archive(path: Path, filename: str = "") -> bool:
+    """True if the file is a plain ZIP, not an office/EPUB container.
+
+    Reads the central directory and at most the first bytes of a "mimetype" entry - the payload
+    is never decompressed further, so a crafted "mimetype" entry can not inflate memory here.
+    """
+    suffix = Path(filename or path).suffix.lower()
+    if suffix in _FOREIGN_SUFFIXES:
+        return False
     try:
         with zipfile.ZipFile(path) as archive:
-            names = archive.namelist()
+            infos = archive.infolist()
+            if len(infos) > _MAX_ENTRIES:
+                logger.warning(
+                    "Archive has %d entries (limit %d) - not treated as a plain ZIP.",
+                    len(infos),
+                    _MAX_ENTRIES,
+                )
+                return False
+            unpacked = sum(info.file_size for info in infos)
+            if unpacked > _MAX_UNCOMPRESSED:
+                logger.warning(
+                    "Archive declares %d unpacked bytes (limit %d) - not treated as a plain ZIP.",
+                    unpacked,
+                    _MAX_UNCOMPRESSED,
+                )
+                return False
+            names = {info.filename for info in infos}
+            if _OOXML_MARKER in names or any(part in names for part in _OOXML_PARTS):
+                return False
+            if "mimetype" in names:
+                try:
+                    with archive.open("mimetype") as handle:
+                        head = handle.read(_MIMETYPE_PROBE_BYTES)
+                except (KeyError, OSError, RuntimeError, zipfile.BadZipFile):
+                    head = b""
+                if head.startswith(_FOREIGN_MIME_PREFIXES):
+                    return False
     except (zipfile.BadZipFile, OSError):
         return False
-    for name in names:
-        if name in _FOREIGN_MARKERS or name.startswith(("word/", "xl/", "ppt/", "META-INF/")):
-            return False
     return True
 
 
 class ZipArchiveParser:
     name: str = "ZIP Archive Parser"
-    version: str = "1.3.0"
+    # One version source: the package itself. A hard-coded copy here would silently drift.
+    version: str = _pkg_version
     author: str = "paperless-zip-parser contributors"
     url: str = "https://github.com/zunami/paperless-zip-parser"
 
@@ -145,11 +210,17 @@ class ZipArchiveParser:
 
     @classmethod
     def score(cls, mime_type: str, filename: str, path: Path | None = None) -> int | None:
-        if mime_type not in _SUPPORTED:
+        expected_suffix = _SUPPORTED.get(mime_type)
+        if expected_suffix is None:
+            return None
+        # The generic fallback must not claim arbitrary binaries: an .iso or .exe reported as
+        # application/octet-stream is not a ZIP, no matter what the magic database says.
+        given_suffix = Path(filename).suffix.lower()
+        if given_suffix and given_suffix != expected_suffix:
             return None
         # Upload validation (serialisers.py) calls score() WITHOUT a path - it has to
         # accept there, otherwise the upload is rejected before the consumer runs.
-        if path is not None and not _is_plain_archive(Path(path)):
+        if path is not None and not _is_plain_archive(Path(path), filename):
             return None
         return 10
 
@@ -182,55 +253,45 @@ class ZipArchiveParser:
         # Only name and size go into the full text: the archive stays searchable without
         # extracting anything. The original is never opened.
         self._text = _t("text", name=source.name, size=size)
-        if not produce_archive:
-            # Intended: no archive PDF -> the original ZIP is what a download returns.
-            self._archive_path = None
-            return
-        try:
-            self._archive_path = self._note_pdf(source.name, size)
-        except Exception:
-            # No ParseError: without the note page only the preview is missing, the document
-            # is still created. A hard failure would discard the whole upload.
-            logger.warning(
-                "ZIP note page failed (%s) - document created without archive version.",
-                source.name,
-                exc_info=True,
-            )
-            self._archive_path = None
+        # 1.3.x behaviour on purpose: no archive PDF at all. Paperless only keeps the
+        # original ZIP, so a plain download returns exactly the uploaded bytes. The
+        # produce_archive flag is accepted for API compatibility and deliberately ignored.
+        self._archive_path = None
 
-    def _note_image(self, filename: str, size: int):
-        """One draw routine for PDF AND thumbnail so both look identical."""
+    def _font(self, size: int):
+        """Thumbnail font with a fallback: a missing or unreadable font must not fail."""
         from django.conf import settings
-        from PIL import Image
-        from PIL import ImageDraw
         from PIL import ImageFont
 
-        img = Image.new("RGB", (1000, 1414), color="white")  # A4 bei 120 dpi
+        try:
+            return ImageFont.truetype(
+                font=settings.THUMBNAIL_FONT_NAME,
+                size=size,
+                layout_engine=ImageFont.Layout.BASIC,
+            )
+        except Exception:  # noqa: BLE001 - any font problem falls back to Pillow's default
+            logger.warning("Thumbnail font %r unavailable, using Pillow default.", size)
+            try:
+                return ImageFont.load_default(size=size)
+            except TypeError:  # Pillow < 10.1 has no size argument
+                return ImageFont.load_default()
+
+    def _note_image(self, filename: str, size: int):
+        """One draw routine for the thumbnail (kept for both text and layout paths)."""
+        from PIL import Image
+        from PIL import ImageDraw
+
+        img = Image.new("RGB", (1000, 1414), color="white")  # A4 at 120 dpi
         draw = ImageDraw.Draw(img)
-        title = ImageFont.truetype(
-            font=settings.THUMBNAIL_FONT_NAME,
-            size=46,
-            layout_engine=ImageFont.Layout.BASIC,
-        )
-        body = ImageFont.truetype(
-            font=settings.THUMBNAIL_FONT_NAME,
-            size=28,
-            layout_engine=ImageFont.Layout.BASIC,
-        )
-        draw.multiline_text((80, 110), _t("title"), font=title, fill="black")
+        draw.multiline_text((80, 110), _t("title"), font=self._font(46), fill="black")
         draw.multiline_text(
             (80, 240),
             f"{_t('file')}\n{filename}\n\n{_t('size', size=size)}\n\n{_t('body')}",
-            font=body,
+            font=self._font(28),
             fill="black",
             spacing=14,
         )
         return img
-
-    def _note_pdf(self, filename: str, size: int) -> Path:
-        pdf_path = self._tempdir / "note.pdf"
-        self._note_image(filename, size).save(pdf_path, "PDF", resolution=100.0)
-        return pdf_path
 
     # ------------------------------------------------------------------
     # Ergebnis-Zugriff
@@ -243,20 +304,37 @@ class ZipArchiveParser:
         return None
 
     def get_archive_path(self) -> Path | None:
-        return self._archive_path
+        # 1.3.x: never a PDF archive, so a download always returns the original ZIP.
+        return None
 
     def get_page_count(self, document_path: Path, mime_type: str) -> int | None:
-        # The note page is always exactly one page. Running get_page_count_for_pdf over the
-        # self-built PDF gains nothing and adds a failure path.
-        return 1 if self._archive_path is not None else None
+        # A ZIP has no page count; a made-up 1 would show a bogus page number in the UI.
+        return None
 
     def extract_metadata(self, document_path: Path, mime_type: str) -> list:
         return []
 
     def get_thumbnail(self, document_path: Path, mime_type: str) -> Path:
+        """Thumbnail of the note layout; falls back to a minimal image instead of raising.
+
+        Two fallback levels: a plain white page if the layout fails, and - because a filesystem
+        problem is not a layout problem - a clear RuntimeError naming the target path if even
+        that write fails. Silently returning a path to a missing file would hide the cause.
+        """
         source = Path(document_path)
-        image = self._note_image(source.name, source.stat().st_size)
-        image.thumbnail((500, 700))
         out_path = self._tempdir / "thumb.webp"
-        image.save(out_path, format="WEBP")
-        return out_path
+        try:
+            image = self._note_image(source.name, source.stat().st_size)
+            image.thumbnail((500, 700))
+            image.save(out_path, format="WEBP")
+            return out_path
+        except Exception:  # noqa: BLE001 - a broken thumbnail must never abort the import
+            logger.warning("Thumbnail rendering failed, writing placeholder.", exc_info=True)
+        try:
+            from PIL import Image
+
+            Image.new("RGB", (300, 424), color="white").save(out_path, format="WEBP")
+            return out_path
+        except Exception as exc:  # noqa: BLE001 - report the filesystem problem, do not hide it
+            logger.error("Thumbnail placeholder could not be written to %s: %s", out_path, exc)
+            raise RuntimeError(f"thumbnail could not be written to {out_path}: {exc}") from exc

@@ -7,3 +7,7 @@ build/
 .verify/
 .pytest_cache/
 
+
+# Review archives and build output never belong in the repository
+*.zip
+!tests/fixtures/*.zip
